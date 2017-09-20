@@ -132,7 +132,7 @@ public class SiddhiMaster {
 
         }
 
-        conMemory = cmdLine.getOptionValue("conMemory", "512");   //2048 has to be*/
+        conMemory = cmdLine.getOptionValue("conMemory", "256");   //2048 has to be*/
 
         appID = cmdLine.getOptionValue("appID");
 
@@ -161,10 +161,26 @@ public class SiddhiMaster {
         if (jsonObject != null) {
 
             this.siddhiApps = (JSONArray) jsonObject.get("siddhiApps");
-            //TODO:number of containers now depend on the container size
-            this.numContainers = siddhiApps.size();
 
-            this.numCores = siddhiApps.size();
+            numContainers=0;
+
+            String s;
+            int temp;
+
+
+            for(int i=0;i<siddhiApps.size();i++){
+
+                s=(String) ((JSONObject)siddhiApps.get(i)).get("parallel");
+
+                temp =Integer.parseInt(s);
+                numContainers +=temp;
+            }
+
+
+
+
+
+   //         this.numCores = siddhiApps.size();
         } else
 
         {
@@ -264,7 +280,7 @@ public class SiddhiMaster {
     }
 
     private AMRMClient.ContainerRequest setupContainerAskFromRM() {
-        //TODO:resource requirements has depend on the user
+        //TODO:resource requirements  depend on the user
 
         Priority pri = Records.newRecord(Priority.class);
         pri.setPriority(0);
@@ -330,6 +346,8 @@ public class SiddhiMaster {
         }
 
         public void onContainersAllocated(List<Container> allocatedContainers) {
+            /*
+            *
 
             //keep track of containers
 
@@ -370,14 +388,16 @@ public class SiddhiMaster {
                 String sourceIP;
                 String sinkIP;
                 String sourcePort;
+                int parallel;
 
 
-                for (int i = 0; i < numContainers; i++) {
+                for (int i = 0; i < siddhiApps.size(); i++) {
 
 
                     JSONObject jsonSiddhiApp = (JSONObject) siddhiApps.get(i);
                     name = (String) jsonSiddhiApp.get("name");
                     app = (String) jsonSiddhiApp.get("app");
+                    parallel=Integer.parseInt((String)jsonSiddhiApp.get("parallel"));
 
 
                     sourceIP = nodeIPList.get(i);
@@ -400,11 +420,110 @@ public class SiddhiMaster {
                     jsonSiddhiApp.put("app", tempString);
                     siddhiApps.set(i, jsonSiddhiApp);
 
-                    runnableLaunchContainer = new LaunchContainerRunnable(containers.get(i), containerListener, "SiddhiWorker.tar.gz", "wso2sp-4.0.0-SNAPSHOT", jsonSiddhiApp, sourcePort, Integer.toString(i));
+                    for(int j=0;j<parallel;j++) {
 
-                    Thread launchThread = new Thread(runnableLaunchContainer);
-                    launchThreads.add(launchThread);
-                    launchThread.start();
+                        runnableLaunchContainer = new LaunchContainerRunnable(containers.get(i), containerListener, "SiddhiWorker.tar.gz", "wso2sp-4.0.0-SNAPSHOT", jsonSiddhiApp, sourcePort, Integer.toString(i));
+
+                        Thread launchThread = new Thread(runnableLaunchContainer);
+                        launchThreads.add(launchThread);
+                        launchThread.start();
+                    }
+
+                }
+
+                try {
+
+                    jsonObject.put("siddhiApps", siddhiApps);
+                    jsonReadWrite.writeConfiguration(jsonObject, deploymentJSONURI);
+                } catch (IOException e) {
+                    logger.error("Unexpected IO error: Configuration File writing", e);
+                }
+
+            }
+
+
+            * */
+
+
+            int lastPort;
+            List<Integer> portList;
+            String nodeIP;
+
+            for (Container allocatedContainer : allocatedContainers)
+
+            {
+                containers.add(allocatedContainer);
+                nodeIP = allocatedContainer.getNodeHttpAddress().split(":")[0];
+
+                if (stringListHashMap.containsKey(nodeIP)) {
+                    portList = stringListHashMap.get(nodeIP);
+                    lastPort = portList.get(portList.size() - 1);
+                    portList.add(lastPort + 1);
+                    stringListHashMap.put(nodeIP, portList);
+                } else {
+                    portList = new LinkedList<Integer>();
+                    portList.add(defaultPort);
+                    stringListHashMap.put(nodeIP, portList);
+                }
+
+                nodeIPList.add(nodeIP);
+
+            }
+
+            if (containers.size() == numContainers) {  //this value depending on the # of containers for the topology
+
+
+                LaunchContainerRunnable runnableLaunchContainer;
+
+
+                String name;
+                String app;
+                String tempString;
+                String sourceIP;
+                String sinkIP;
+                String sourcePort;
+                int parallel;
+                int containerNumber=0;
+
+
+                for (int i = 0; i < siddhiApps.size(); i++) {
+
+
+                    JSONObject jsonSiddhiApp = (JSONObject) siddhiApps.get(i);
+                    name = (String) jsonSiddhiApp.get("name");
+                    app = (String) jsonSiddhiApp.get("app");
+                    parallel=Integer.parseInt((String)jsonSiddhiApp.get("parallel"));
+
+
+                    sourceIP = nodeIPList.get(i);
+                    sourcePort = Integer.toString(stringListHashMap.get(sourceIP).get(0));
+
+                    if (i != (numContainers - 1)) {
+                        sinkIP = nodeIPList.get(i + 1);
+
+                        stringListHashMap.get(sourceIP).remove(0);
+
+                        tempString = app.replaceAll("\\$\\{" + name + " source_ip}", sourceIP).replaceAll("\\{" + name + " source_port}", sourcePort).replaceAll("\\$\\{" + name + " sink_ip}", sinkIP).replaceAll("\\{" + name + " sink_port}", Integer.toString(stringListHashMap.get(sinkIP).get(0)));
+
+
+                    } else {
+
+                        tempString = app.replaceAll("\\$\\{" + name + " source_ip}", sourceIP).replaceAll("\\{" + name + " source_port}", sourcePort).replaceAll("\\$\\{" + name + " sink_ip}", sourceIP).replaceAll("\\{" + name + " sink_port}", "9992");
+                    }
+
+
+                    jsonSiddhiApp.put("app", tempString);
+                    siddhiApps.set(i, jsonSiddhiApp);
+
+                    for(int j=0;j<parallel;j++) {
+
+                        runnableLaunchContainer = new LaunchContainerRunnable(containers.get(containerNumber), containerListener, "SiddhiWorker.tar.gz", "wso2sp-4.0.0-SNAPSHOT", jsonSiddhiApp, sourcePort, Integer.toString(i));
+
+                        Thread launchThread = new Thread(runnableLaunchContainer);
+                        launchThreads.add(launchThread);
+                        launchThread.start();
+                        containerNumber++;
+                    }
 
                 }
 
