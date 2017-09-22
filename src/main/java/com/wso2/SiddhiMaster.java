@@ -55,7 +55,6 @@ public class SiddhiMaster {
     private Configuration conf;
     private Options options;
     private int numContainers;
-    private int numCores;
     private String conMemory;
     private String appID;
     private List<Thread> launchThreads = new ArrayList<Thread>();
@@ -162,25 +161,20 @@ public class SiddhiMaster {
 
             this.siddhiApps = (JSONArray) jsonObject.get("siddhiApps");
 
-            numContainers=0;
+            numContainers = 0;
 
             String s;
             int temp;
 
 
-            for(int i=0;i<siddhiApps.size();i++){
+            for (int i = 0; i < siddhiApps.size(); i++) {
 
-                s=(String) ((JSONObject)siddhiApps.get(i)).get("parallel");
+                s = (String) ((JSONObject) siddhiApps.get(i)).get("parallel");
 
-                temp =Integer.parseInt(s);
-                numContainers +=temp;
+                temp = Integer.parseInt(s);
+                numContainers += temp;
             }
 
-
-
-
-
-   //         this.numCores = siddhiApps.size();
         } else
 
         {
@@ -306,21 +300,21 @@ public class SiddhiMaster {
                 exitStatus = sts.getExitStatus();
 
                 if (exitStatus == 0) {
-                    logger.info("Successfully completed container ID: " + sts.getContainerId()  );
+                    logger.info("Successfully completed container ID: " + sts.getContainerId());
 
                 } else {
                     if (ContainerExitStatus.ABORTED == exitStatus) {
                         //need to reschedule the container again
                         requestedContainers.decrementAndGet();
                         allocContainers.decrementAndGet();
-                        logger.info("Container killed by the framework: "+sts.getContainerId()+ "..new  container will be rescheduled");
+                        logger.info("Container killed by the framework: " + sts.getContainerId() + "..new  container will be rescheduled");
                     } else {
                         //container being killed due to different reason --->here not allocating them again
                         completedContainers.incrementAndGet();
                         failedContainers.incrementAndGet();
 
                         //get diagnostic message of failed containers
-                        logger.info(sts.getContainerId() +" Container terminated , new container will not be rescheduled:"  +"due to "+sts.getDiagnostics() );
+                        logger.info(sts.getContainerId() + " Container terminated , new container will not be rescheduled:" + "due to " + sts.getDiagnostics());
 
                     }
 
@@ -372,69 +366,97 @@ public class SiddhiMaster {
 
             }
 
+            System.out.println("before condition");
+            System.out.println(numContainers);
+            System.out.println("container liste size" + containers.size());
             if (containers.size() == numContainers) {  //this value depending on the # of containers for the topology
 
+
+
+                System.out.println("after condition");
 
                 LaunchContainerRunnable runnableLaunchContainer;
 
 
-                String name;
-                String app;
+                String name="";
+                String app="";
                 String tempString;
                 String sourceIP;
                 String sinkIP;
                 String sourcePort;
-                int parallel;
-                int containerNumber=0;
+                int parallel=1;
+                int containerNumber = 0;
+                int sinkPorts = 1;
+                int jsonObectNumber = 0;
+                JSONObject jsonSiddhiApp=null;
+                JSONObject JSONsinkPort;
+                boolean truth=true;
+                int testport = 9992;                   //final port only for testing
 
 
-                for (int i = 0; i < siddhiApps.size(); i++) {
+                for(int i=0;i<containers.size();i++){
+                    if (i == containerNumber) {
 
+                        jsonSiddhiApp = (JSONObject) siddhiApps.get(jsonObectNumber);
+                        name = (String) jsonSiddhiApp.get("name");
+                        parallel = Integer.parseInt((String) jsonSiddhiApp.get("parallel"));
 
-                    JSONObject jsonSiddhiApp = (JSONObject) siddhiApps.get(i);
-                    name = (String) jsonSiddhiApp.get("name");
+                        //to get number of sinkPorts
+                        sinkPorts = 1;
+
+                        if (jsonObectNumber + 1 < siddhiApps.size()) {
+                            JSONsinkPort = (JSONObject) siddhiApps.get(jsonObectNumber + 1);
+                            sinkPorts = Integer.parseInt((String) JSONsinkPort.get("parallel"));
+                        }
+                        else
+                        {
+                            truth=false;
+                        }
+                        jsonObectNumber++;
+                        containerNumber += parallel;
+
+                    }
+
                     app = (String) jsonSiddhiApp.get("app");
-                    parallel=Integer.parseInt((String)jsonSiddhiApp.get("parallel"));
 
 
                     sourceIP = nodeIPList.get(i);
                     sourcePort = Integer.toString(stringListHashMap.get(sourceIP).get(0));
+                    String temp ;
 
-                    if (i != (numContainers - 1)) {
-                        sinkIP = nodeIPList.get(i + 1);
+                    tempString = app.replaceAll("\\$\\{" + name + " source_ip}", sourceIP).replaceAll("\\{" + name + " source_port}", sourcePort);
+                    stringListHashMap.get(sourceIP).remove(0);
 
-                        stringListHashMap.get(sourceIP).remove(0);
+                    if(truth) {
+                        for (int k = 1; k <= sinkPorts; k++) {
 
-                        tempString = app.replaceAll("\\$\\{" + name + " source_ip}", sourceIP).replaceAll("\\{" + name + " source_port}", sourcePort).replaceAll("\\$\\{" + name + " sink_ip}", sinkIP).replaceAll("\\{" + name + " sink_port}", Integer.toString(stringListHashMap.get(sinkIP).get(0)));
 
+                            sinkIP = nodeIPList.get(i + k + parallel - 1);
+                            temp = tempString.replaceAll("\\$\\{" + name + " sink_ip}", sinkIP).replaceAll("\\{" + name + " sink_port" + Integer.toString(k ) + "}", Integer.toString(stringListHashMap.get(sinkIP).get(k - 1)));
+                            tempString=temp;
+                        }
+                    }
+                    else{
+                        //for binding
+                        temp = tempString.replaceAll("\\$\\{" + name + " sink_ip}", nodeIPList.get(i)).replaceAll("\\{" + name + " sink_port" + Integer.toString(1 ) + "}", Integer.toString(testport));
+                        testport++;
 
-                    } else {
-
-                        tempString = app.replaceAll("\\$\\{" + name + " source_ip}", sourceIP).replaceAll("\\{" + name + " source_port}", sourcePort).replaceAll("\\$\\{" + name + " sink_ip}", sourceIP).replaceAll("\\{" + name + " sink_port}", "9992");
                     }
 
 
-                    jsonSiddhiApp.put("app", tempString);
-                    siddhiApps.set(i, jsonSiddhiApp);
 
-                    for(int j=0;j<parallel;j++) {
+                    parallel-=1;
 
-                        runnableLaunchContainer = new LaunchContainerRunnable(containers.get(containerNumber), containerListener, "SiddhiWorker.tar.gz", "wso2sp-4.0.0-SNAPSHOT", jsonSiddhiApp, sourcePort, Integer.toString(i));
 
-                        Thread launchThread = new Thread(runnableLaunchContainer);
-                        launchThreads.add(launchThread);
-                        launchThread.start();
-                        containerNumber++;
-                    }
+                    JSONObject jsonObject1 = new JSONObject();
+                    jsonObject1.put("app", tempString);
+                    jsonObject1.put("name",name);
+                    runnableLaunchContainer = new LaunchContainerRunnable(containers.get(i), containerListener, "SiddhiWorker.tar.gz", "wso2sp-4.0.0-SNAPSHOT", jsonObject1, sourcePort, Integer.toString(i));
 
-                }
+                    Thread launchThread = new Thread(runnableLaunchContainer);
+                    launchThreads.add(launchThread);
+                    launchThread.start();
 
-                try {
-
-                    jsonObject.put("siddhiApps", siddhiApps);
-                    jsonReadWrite.writeConfiguration(jsonObject, deploymentJSONURI);
-                } catch (IOException e) {
-                    logger.error("Unexpected IO error: Configuration File writing", e);
                 }
 
             }
@@ -458,7 +480,7 @@ public class SiddhiMaster {
 
         public void onError(Throwable e) {
 
-            logger.error("ResourceManager communication error.Stopping the RM instance:",e);
+            logger.error("ResourceManager communication error.Stopping the RM instance:", e);
             resourceManager.stop();
 
         }
@@ -536,9 +558,6 @@ public class SiddhiMaster {
             Map<String, LocalResource> localResources = new HashMap<String, LocalResource>();
 
             String applicationId = container.getId().getApplicationAttemptId().getApplicationId().toString();
-
-
-            //run multiple workers in yarn
 
             try {
                 FileSystem fs = FileSystem.get(conf);
