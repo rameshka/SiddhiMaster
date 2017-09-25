@@ -439,6 +439,7 @@ public class SiddhiMaster {
                     else{
                         //for binding
                         temp = tempString.replaceAll("\\$\\{" + name + " sink_ip}", nodeIPList.get(i)).replaceAll("\\{" + name + " sink_port" + Integer.toString(1 ) + "}", Integer.toString(testport));
+                        tempString=temp;
                         testport++;
 
                     }
